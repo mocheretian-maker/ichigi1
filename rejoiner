@@ -1,0 +1,96 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ServerID_to_Rejoin = game.JobId
+
+local Settings = {
+    Enabled = false,
+    TimeValue = 30,
+    TimeUnit = "Minutes"
+}
+
+local Window = Rayfield:CreateWindow({
+   Name = "Auto Server Rejoiner",
+   LoadingTitle = "Загрузка...",
+   ConfigurationSaving = { Enabled = true, FolderName = "RejoinerV4", FileName = "Config" }
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+
+MainTab:CreateLabel("Rejoining to this Server ID:")
+MainTab:CreateLabel(ServerID_to_Rejoin)
+MainTab:CreateDivider()
+
+local TimeInput = MainTab:CreateInput({
+   Name = "Time Value",
+   PlaceholderText = "Enter a number (e.g., 45)",
+   RemoveTextAfterFocusLost = false,
+   Flag = "RejoinTimeValue",
+   Callback = function(text)
+      local num = tonumber(text)
+      if num and num > 0 then Settings.TimeValue = num end
+   end,
+})
+
+local TimeUnitDropdown = MainTab:CreateDropdown({
+    Name = "Time Unit",
+    Options = {"Minutes", "Hours", "Days"},
+    CurrentOption = {"Minutes"},
+    MultipleOptions = false,
+    Flag = "RejoinTimeUnit",
+    Callback = function(option)
+        Settings.TimeUnit = option[1]
+    end,
+})
+
+local CountdownLabel = MainTab:CreateLabel("Rejoiner is disabled.")
+
+function RejoinServer()
+    Rayfield:Notify({Title = "Rejoining!", Content = "Teleporting back to the server...", Duration = 5})
+    
+    local success, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, ServerID_to_Rejoin, LocalPlayer)
+    end)
+    if not success then
+        Rayfield:Notify({Title = "Teleport Failed!", Content = "Server might be full or closed.", Duration = 5})
+    end
+end
+
+local Toggle = MainTab:CreateToggle({
+   Name = "Enable Auto Rejoin",
+   CurrentValue = false,
+   Flag = "RejoinEnabled",
+   Callback = function(value)
+      Settings.Enabled = value
+      
+      if Settings.Enabled then
+         task.spawn(function()
+            local totalSeconds = 0
+            if Settings.TimeUnit == "Minutes" then totalSeconds = Settings.TimeValue * 60
+            elseif Settings.TimeUnit == "Hours" then totalSeconds = Settings.TimeValue * 3600
+            elseif Settings.TimeUnit == "Days" then totalSeconds = Settings.TimeValue * 86400
+            end
+            if totalSeconds <= 0 then CountdownLabel:Set("Error: Invalid time!") return end
+            
+            for i = totalSeconds, 1, -1 do
+               if not Settings.Enabled then CountdownLabel:Set("Rejoiner is disabled."); return end
+               
+               local days = math.floor(i / 86400); local hours = math.floor((i % 86400) / 3600)
+               local minutes = math.floor((i % 3600) / 60); local seconds = i % 60
+               
+               if days > 0 then
+                    CountdownLabel:Set(string.format("Rejoin in: %dд %02d:%02d:%02d", days, hours, minutes, seconds))
+               else
+                    CountdownLabel:Set(string.format("Rejoin in: %02d:%02d:%02d", hours, minutes, seconds))
+               end
+               task.wait(1)
+            end
+            
+            RejoinServer()
+         end)
+      else
+         CountdownLabel:Set("Rejoiner is disabled.")
+      end
+   end,
+})
