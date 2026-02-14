@@ -1,4 +1,4 @@
--- Auto Rejoiner (Delta-friendly + Rayfield UI)
+-- Auto Rejoiner (Delta-friendly + Rayfield UI) + Uptime Stats
 -- Supports: Delta, Fluxus, KRNL, Synapse-like APIs (best effort)
 
 local Players = game:GetService("Players")
@@ -167,6 +167,9 @@ local defaultConfig = {
     LastRejoinTime = "",
     LastReason = "",
     AutoQueue = false,
+
+    TotalUptime = 0,
+    TotalSessions = 0,
 }
 
 local config = {}
@@ -236,6 +239,17 @@ local function buildPing()
     return ""
 end
 
+local sessionStartClock = os.clock()
+local sessionStartISO = nowISO()
+
+local function getSessionUptime()
+    return math.max(0, os.clock() - sessionStartClock)
+end
+
+local function getTotalUptime()
+    return math.max(0, tonumber(config.TotalUptime) or 0)
+end
+
 local function sendWebhook(reason, details, remainingSeconds)
     local url = tostring(config.WebhookUrl or "")
     if not isValidWebhook(url) then
@@ -247,8 +261,15 @@ local function sendWebhook(reason, details, remainingSeconds)
         { name = "Executor", value = tostring(getExecutorName()), inline = true },
         { name = "PlaceId", value = tostring(game.PlaceId), inline = true },
         { name = "JobId", value = tostring(game.JobId), inline = false },
+
         { name = "Reason", value = tostring(reason or "Timer"), inline = true },
         { name = "Next", value = fmtTime(remainingSeconds or 0), inline = true },
+
+        { name = "Session Uptime", value = fmtTime(getSessionUptime()), inline = true },
+        { name = "Total Uptime", value = fmtTime(getTotalUptime()), inline = true },
+        { name = "Total Sessions", value = tostring(config.TotalSessions or 0), inline = true },
+
+        { name = "Session Started", value = tostring(sessionStartISO ~= "" and sessionStartISO or "-"), inline = false },
     }
 
     if type(details) == "string" and details ~= "" then
@@ -332,6 +353,10 @@ local function antiAfk()
 end
 
 loadConfig()
+
+config.TotalSessions = (tonumber(config.TotalSessions) or 0) + 1
+saveConfig()
+
 antiAfk()
 
 local Rayfield = loadRayfield()
@@ -421,11 +446,15 @@ local function triggerRejoin(reason, details)
 
     task.spawn(function()
         task.wait(0.2)
+
         sendWebhook(reason, details, remainingSeconds)
 
         config.RejoinCount = (tonumber(config.RejoinCount) or 0) + 1
         config.LastRejoinTime = nowISO()
         config.LastReason = tostring(reason or "Timer")
+
+        config.TotalUptime = (tonumber(config.TotalUptime) or 0) + getSessionUptime()
+
         saveConfig()
         refreshStatsParagraph()
 
@@ -633,11 +662,18 @@ WebhookTab:CreateButton({
 })
 
 local function getStatsText()
+    local sessionUptime = fmtTime(getSessionUptime())
+    local totalUptime = fmtTime(getTotalUptime())
+
     return string.format(
-        "Rejoins: %s\nLast reason: %s\nLast time: %s",
+        "Rejoins: %s\nLast reason: %s\nLast time: %s\n\nSession uptime: %s\nTotal uptime: %s\nTotal sessions: %s\nSession started: %s",
         tostring(config.RejoinCount or 0),
         tostring(config.LastReason or "-"),
-        tostring(config.LastRejoinTime or "-")
+        tostring(config.LastRejoinTime or "-"),
+        sessionUptime,
+        totalUptime,
+        tostring(config.TotalSessions or 0),
+        tostring(sessionStartISO ~= "" and sessionStartISO or "-")
     )
 end
 
@@ -653,6 +689,12 @@ refreshStatsParagraph = function()
     })
 end
 
+task.spawn(function()
+    while task.wait(1) do
+        refreshStatsParagraph()
+    end
+end)
+
 InfoTab:CreateParagraph({
     Title = "Credits",
     Content = "Made by Ichigi",
@@ -667,6 +709,17 @@ InfoTab:CreateButton({
         saveConfig()
         refreshStatsParagraph()
         notify("Statistics", "Rejoin counter reset")
+    end,
+})
+
+InfoTab:CreateButton({
+    Name = "Reset Total Uptime",
+    Callback = function()
+        config.TotalUptime = 0
+        config.TotalSessions = 0
+        saveConfig()
+        refreshStatsParagraph()
+        notify("Statistics", "Total uptime + sessions reset")
     end,
 })
 
